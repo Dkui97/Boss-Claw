@@ -26,6 +26,8 @@ coverage/
 desktop-app/dist/
 desktop-app/release/
 desktop-app/tmp/
+# 简历模板原型 / PDF 预览 / 截图等开发草稿（产线模板已内联进 src/lib/bossclaw/resumePdf.ts）
+desktop-app/scripts-tmp/
 desktop-app/node_modules/
 # 第三方 cloakbrowser 源码副本（npm 包即可，无需入库）
 desktop-app/cloakbrowser/
