@@ -43,7 +43,7 @@ export function getTheme(mode: ThemeMode): ThemeConfig {
       colorTextTertiary: isDark ? '#6B7280' : '#94A3B8',
       colorBorder: isDark ? 'rgba(255, 255, 255, 0.10)' : 'rgba(15, 23, 42, 0.10)',
       colorBorderSecondary: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(15, 23, 42, 0.06)',
-      borderRadius: 12,
+      borderRadius: 10,
       fontSize: 14,
       fontFamily: `-apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif`,
     },
@@ -58,11 +58,34 @@ export function getTheme(mode: ThemeMode): ThemeConfig {
         colorPrimaryHover: BRAND_LIGHT,
         colorPrimaryActive: BRAND_DARK,
       },
+      Input: {
+        borderRadius: 8,
+        controlHeight: 36,
+        controlHeightLG: 42,
+        controlHeightSM: 28,
+        activeBorderColor: BRAND,
+        hoverBorderColor: BRAND_LIGHT,
+      },
+      InputNumber: {
+        borderRadius: 8,
+        controlHeight: 36,
+        controlHeightLG: 42,
+        controlHeightSM: 28,
+      },
+      Select: {
+        borderRadius: 8,
+        controlHeight: 36,
+        controlHeightLG: 42,
+        controlHeightSM: 28,
+      },
       Card: {
         borderRadiusLG: 14,
         paddingLG: 20,
       },
       Modal: {
+        borderRadiusLG: 16,
+      },
+      Drawer: {
         borderRadiusLG: 16,
       },
       Tabs: {
@@ -73,9 +96,45 @@ export function getTheme(mode: ThemeMode): ThemeConfig {
       Segmented: {
         borderRadius: 9999,
         trackPadding: 3,
+        itemSelectedBg: isDark ? '#1C2433' : '#FFFFFF',
+        itemSelectedColor: BRAND,
       },
       Tag: {
         borderRadiusSM: 6,
+      },
+      Table: {
+        borderRadius: 10,
+        headerBg: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(15, 23, 42, 0.02)',
+        headerColor: isDark ? '#9CA3AF' : '#475569',
+        rowHoverBg: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(15, 23, 42, 0.03)',
+      },
+      Switch: {
+        colorPrimary: BRAND,
+        colorPrimaryHover: BRAND_LIGHT,
+      },
+      Slider: {
+        colorPrimary: BRAND,
+        colorPrimaryHover: BRAND_LIGHT,
+        trackBg: BRAND,
+        trackHoverBg: BRAND_LIGHT,
+      },
+      Collapse: {
+        borderRadiusLG: 12,
+      },
+      Alert: {
+        borderRadiusLG: 10,
+      },
+      Tooltip: {
+        borderRadius: 8,
+      },
+      Dropdown: {
+        borderRadiusLG: 10,
+      },
+      Progress: {
+        remainingColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.06)',
+      },
+      Badge: {
+        dotSize: 6,
       },
     },
   };
