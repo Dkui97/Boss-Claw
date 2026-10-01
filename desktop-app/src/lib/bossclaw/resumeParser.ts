@@ -2,13 +2,14 @@
 // 对齐 job-claw-main 的解析口径，并借鉴 AI-BossJob 的「多重解析 + 明确降级提示」策略：
 //   PDF  → 本地 pdfExtractor（Flate/ASCIIHex/ASCII85/RunLength + ToUnicode/CMap）
 //   DOCX → 本地 docxParser（ZIP + XML，零依赖）；失败可尝试桥接 mammoth
+//   DOC  → 本地 docParser（OLE2/CFB + FIB/CLX 分片；兼容 RTF / HTML 伪装的 .doc）→ 可尝试桥接
 //   MD   → 本地 markdownToPlainText（标题/列表/表格/粗斜体等语法清洗为规整纯文本）
 //   TXT  → 直接读取
-//   DOC  → 旧版二进制 Word，前端无法可靠提取，给出转档建议
 // 所有路径在失败时都给出可操作的下一步建议，避免用户停在“解析失败”死胡同。
 
 import { extractPdfText, isReadableResumeText } from './pdfExtractor';
 import { extractDocxText } from './docxParser';
+import { extractDocText } from './docParser';
 import { markdownToPlainText } from './mdParser';
 
 export interface ResumeParseResult {
@@ -123,9 +124,32 @@ export async function parseResumeFile(file: File, bridgeFallback?: BridgeFallbac
   }
 
   if (kind === 'doc') {
-    warnings.push('旧版 .doc 为二进制格式，浏览器无法直接提取文本。请用 Word 另存为 .docx 或 .txt 后重新导入，或直接复制粘贴正文。');
-    throw new Error('暂不支持旧版 .doc 格式，请转存为 DOCX / TXT 或直接粘贴正文');
+    // 旧版 .doc：本地解析（OLE2 二进制 / RTF / HTML 三种真实载体都能识别），失败再走桥接转换
+    const buf = await file.arrayBuffer();
+    try {
+      const res = await extractDocText(buf);
+      if (!isReadableResumeText(res.text)) {
+        warnings.push('DOC 文本可读度偏低：可能是纯图片排版或扫描件。建议改用 DOCX/PDF，或打开 Word 全选复制粘贴到文本框。');
+      }
+      return { text: res.text, method: res.method, warnings };
+    } catch (err: any) {
+      if (bridgeFallback) {
+        try {
+          const r = await bridgeFallback(file, file.name);
+          if (r.text && r.text.trim()) {
+            warnings.push(`本地 DOC 解析未成功（${err?.message || '未知原因'}），已通过桥接解析（${r.method}）。`);
+            return { text: r.text, method: r.method, warnings };
+          }
+        } catch {
+          /* 桥接也不可用，落到下方提示 */
+        }
+      }
+      warnings.push(
+        `DOC 解析失败（${err?.message || '未知原因'}）。可在 Word 中「另存为」DOCX / PDF / TXT 后重新导入，或直接全选复制粘贴到文本框。`
+      );
+      throw new Error(`DOC 解析失败：${err?.message || '未知原因'}`);
+    }
   }
 
-  throw new Error('仅支持 PDF / DOCX / MD / TXT 文件（旧版 .doc 请先转档）');
+  throw new Error('仅支持 PDF / DOCX / DOC / MD / TXT 文件');
 }

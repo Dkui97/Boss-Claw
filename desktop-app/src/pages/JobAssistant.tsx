@@ -2,7 +2,7 @@
  * 【主模块：定制简历】导航 key = 'assistant'
  * 子模块：
  * - 岗位信息卡（导入已批准岗位 / 已投递岗位 / 岗位名称 / 岗位要求 + 「AI 生成定制简历」）
- * - 经历补充材料卡（tailor-materials-card：PDF/DOCX/MD/TXT 导入真实经历，仅参与定制与要点判定）
+ * - 经历补充材料卡（tailor-materials-card：PDF/DOCX/DOC/MD/TXT 导入真实经历，仅参与定制与要点判定）
  * - 定制结果（TailorResultView：七模块 doc + 匹配评分 + 要点对照 + 求职信，可导出 PDF / 存打招呼语）
  * - 历史定制记录（本地最近 HISTORY_MAX 条，可载入/删除）
  */
@@ -31,7 +31,7 @@ import { TailorResultView } from '@/components/TailorResultView';
 
 const { Text } = Typography;
 
-// ===== 经历补充材料：解析兜底（DOCX/PDF 本地失败时走桥接 mammoth / pdftotext） =====
+// ===== 经历补充材料：解析兜底（DOCX/PDF/DOC 本地失败时走桥接 mammoth / pdftotext / 转档） =====
 const materialBridgeFallback = async (file: File, name: string) => {
   const dataUrl = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -576,7 +576,7 @@ export default function JobAssistant() {
         }
       >
         <p className="tailor-materials-hint">
-          简历里漏写的实习 / 项目 / 论文 / 获奖等真实经历，可导入 PDF、DOCX、MD、TXT 作为补充材料：
+          简历里漏写的实习 / 项目 / 论文 / 获奖等真实经历，可导入 PDF、DOCX、DOC、MD、TXT 作为补充材料：
           <b>定制简历与「岗位要点对照」会参考它补齐缺失内容</b>。
           应用内只记录文件路径、不保存内容，每次生成时从磁盘现读——你在外部改了素材文件即时生效；
           它<b>只作用在本页的定制简历</b>，不会改动「简历中心」的简历原文与职业画像，也不影响工作台评分口径。

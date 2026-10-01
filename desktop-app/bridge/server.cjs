@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 // OpenClaw 本地桥接服务（Node 跨平台版）
-// 提供：状态、日报、控制（start/pause/stop/restore）、简历 PDF/OCR 解析（降级）
+// 提供：状态、日报、控制（start/pause/stop/restore）、简历解析兜底（PDF→pdftotext、DOCX/旧版 DOC→mammoth/转档）
 // 移植并适配自 job-claw-main\旧版本\学习逻辑\desktop-bridge\server.js
 const http = require('http');
 const fs = require('fs');
@@ -66,7 +66,7 @@ function readableResumeText(text) {
 }
 function decodeDataUrl(dataUrl) {
   const match = String(dataUrl || '').match(/^data:([^;,]+)?(?:;charset=[^;,]+)?;base64,(.+)$/s);
-  if (!match) throw new Error('PDF 数据格式无效');
+  if (!match) throw new Error('简历文件数据格式无效');
   return Buffer.from(match[2], 'base64');
 }
 async function parseResumePdf(payload) {
@@ -97,11 +97,99 @@ async function parseResumePdf(payload) {
   }
 }
 
+async function parseResumeDoc(payload) {
+  const bytes = decodeDataUrl(payload.dataUrl);
+  if (!bytes.length || bytes.length > 18 * 1024 * 1024) throw new Error('.doc 文件大小无效');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bossclaw-resume-doc-'));
+  const filePath = path.join(tempDir, 'resume.doc');
+  fs.writeFileSync(filePath, bytes, { mode: 0o600 });
+  const diagnostics = [];
+  const record = (method, ok, detail = '') => diagnostics.push({ method, ok, detail: String(detail || '').slice(0, 240) });
+  try {
+    const converted = await convertDocToDocx(filePath, tempDir, record);
+    if (!converted) {
+      return {
+        ok: false, text: '', method: 'none',
+        error: '本机未找到可用的 .doc 转档器（需装 Microsoft Word 或 LibreOffice）；请在 Word 中「另存为」DOCX/PDF/TXT 后重新导入，或直接复制粘贴正文',
+        diagnostics,
+      };
+    }
+    try {
+      const mammoth = require('mammoth');
+      const { value } = await mammoth.extractRawText({ buffer: fs.readFileSync(converted.path) });
+      const text = normalizeResumeText(value);
+      const ok = readableResumeText(text);
+      record('mammoth', ok, ok ? `${text.length} 字` : '无可靠正文');
+      if (ok) return { ok: true, text, method: converted.method, diagnostics };
+    } catch (error) {
+      record('mammoth', false, error.message);
+    }
+    return { ok: false, text: '', method: 'none', error: 'DOC 已转档但未提取到可靠正文，请改用 DOCX/PDF 或直接粘贴正文', diagnostics };
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+function findSoffice() {
+  return ['soffice', 'libreoffice', 'soffice.exe'].find((cmd) => commandExists(cmd)) || '';
+}
+
+/** 旧版 .doc → .docx 转档：先试 LibreOffice（跨平台），再试 Windows + Word COM（需装 Office） */
+async function convertDocToDocx(filePath, tempDir, record) {
+  const outDir = path.join(tempDir, 'conv');
+  fs.mkdirSync(outDir, { recursive: true });
+  const expected = path.join(outDir, `${path.basename(filePath).replace(/\.doc$/i, '')}.docx`);
+
+  const soffice = findSoffice();
+  if (soffice) {
+    try {
+      await runFile(soffice, ['--headless', '--norestore', '--convert-to', 'docx', '--outdir', outDir, filePath], { timeout: 90000 });
+      if (fs.existsSync(expected)) {
+        record('soffice', true, '转档成功');
+        return { path: expected, method: 'doc-soffice' };
+      }
+      record('soffice', false, '未产出 docx');
+    } catch (error) {
+      record('soffice', false, error.message);
+    }
+  } else {
+    record('soffice', false, '未安装');
+  }
+
+  if (process.platform === 'win32') {
+    // 路径经 base64 传入，规避中文路径与引号在命令行中的转义问题（-EncodedCommand 同样为编码传递）
+    const b64 = (s) => Buffer.from(s, 'utf8').toString('base64');
+    const script = [
+      "$ErrorActionPreference='Stop'",
+      `$src=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${b64(filePath)}'))`,
+      `$dst=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${b64(expected)}'))`,
+      '$w=New-Object -ComObject Word.Application',
+      '$w.Visible=$false',
+      '$w.DisplayAlerts=0',
+      'try{$d=$w.Documents.Open($src,$false,$true,$false);$d.SaveAs2($dst,12);$d.Close(0)}finally{$w.Quit()}',
+    ].join(';');
+    try {
+      await runFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { timeout: 90000 });
+      if (fs.existsSync(expected)) {
+        record('word-com', true, '转档成功');
+        return { path: expected, method: 'doc-word-com' };
+      }
+      record('word-com', false, '未产出 docx');
+    } catch (error) {
+      record('word-com', false, error.message);
+    }
+  } else {
+    record('word-com', false, '仅 Windows 可用');
+  }
+  return null;
+}
+
 async function parseResumeText(payload) {
   if (!payload || !payload.dataUrl) throw new Error('缺少简历数据');
   const name = String(payload.name || '').toLowerCase();
   const isTxt = name.endsWith('.txt') || name.endsWith('.md');
   const isDocx = name.endsWith('.docx');
+  const isDoc = name.endsWith('.doc');
   if (isTxt) {
     const text = normalizeResumeText(decodeDataUrl(payload.dataUrl).toString('utf8'));
     return { ok: readableResumeText(text), text, method: 'text' };
@@ -115,6 +203,13 @@ async function parseResumeText(payload) {
       return { ok: readableResumeText(text), text, method: 'mammoth' };
     } catch (error) {
       return { ok: false, text: '', method: 'none', error: `DOCX 解析失败（需安装 mammoth 或改用 PDF/TXT）：${error.message}` };
+    }
+  }
+  if (isDoc) {
+    try {
+      return await parseResumeDoc(payload);
+    } catch (error) {
+      return { ok: false, text: '', method: 'none', error: `DOC 解析失败（可改用 DOCX/PDF/TXT）：${error.message}` };
     }
   }
   return parseResumePdf(payload);
@@ -149,7 +244,7 @@ const server = http.createServer((request, response) => {
       if (requestUrl.pathname === '/status') {
         return respond(response, 200, {
           ok: true, name: 'bossclaw-bridge', version: '2.0.0', running: database.control.running, paused: database.control.paused,
-          parsers: { pdftotext: commandExists('pdftotext') },
+          parsers: { pdftotext: commandExists('pdftotext'), soffice: findSoffice() || false, wordCom: process.platform === 'win32' },
           databasePath, events: database.events.length,
         }, origin);
       }

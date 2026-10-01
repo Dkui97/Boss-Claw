@@ -259,7 +259,7 @@ export default function Resume() {
   const handleFile = async (file: File) => {
     const kind = resumeFileKind(file.name);
     if (kind === 'unsupported') {
-      message.error('仅支持 PDF / DOCX / MD / TXT 文件（旧版 .doc 请先转档为 DOCX/TXT）');
+      message.error('仅支持 PDF / DOCX / DOC / MD / TXT 文件');
       return;
     }
     try {
@@ -400,6 +400,11 @@ export default function Resume() {
     'pdf-content-stream': 'PDF 内容流',
     'docx-local': 'DOCX 本地解析',
     'mammoth': 'DOCX（桥接 mammoth）',
+    'doc-local': 'DOC 本地解析（Word 97-2003）',
+    'doc-rtf': 'DOC 本地解析（RTF 载体）',
+    'doc-html': 'DOC 本地解析（HTML 载体）',
+    'doc-word-com': 'DOC（桥接 Word 转换为 DOCX）',
+    'doc-soffice': 'DOC（桥接 LibreOffice 转换为 DOCX）',
     'pdftotext': 'PDF（桥接 pdftotext）',
     'none': '未知',
   };
@@ -412,7 +417,7 @@ export default function Resume() {
             <FileTextOutlined className="page-title-icon" />简历中心
           </h1>
           <p className="page-sub">
-            导入 PDF / DOCX / MD / TXT，本地解析提取文本（无需联网）；AI 生成可编辑的职业画像与打招呼语提示词（未配置或失败时自动回退本地规则）。
+            导入 PDF / DOCX / DOC / MD / TXT，本地解析提取文本（无需联网）；AI 生成可编辑的职业画像与打招呼语提示词（未配置或失败时自动回退本地规则）。
           </p>
         </div>
       </div>
@@ -451,7 +456,7 @@ export default function Resume() {
                 <Button icon={<UploadOutlined />} onClick={() => fileRef.current?.click()}>
                   {text.trim() ? '重新导入' : '导入文件'}
                 </Button>
-                <input ref={fileRef} type="file" accept=".pdf,.docx,.txt,.md,.text" hidden onChange={onPick} />
+                <input ref={fileRef} type="file" accept=".pdf,.docx,.doc,.txt,.md,.text" hidden onChange={onPick} />
               </Space>
             }
             onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
@@ -478,6 +483,7 @@ export default function Resume() {
                 <div className="file-type-chips">
                   <span className="file-type-chip">PDF</span>
                   <span className="file-type-chip">DOCX</span>
+                  <span className="file-type-chip">DOC</span>
                   <span className="file-type-chip">TXT</span>
                 </div>
               </div>
@@ -487,7 +493,7 @@ export default function Resume() {
               onChange={(e) => setText(e.target.value)}
               rows={text.trim() ? 18 : 6}
               className={'resume-src-input' + (text.trim() ? '' : ' resume-src-input--empty')}
-              placeholder="在此粘贴简历正文，或点击右上角「重新导入」导入 PDF / DOCX / MD / TXT"
+              placeholder="在此粘贴简历正文，或点击右上角「重新导入」导入 PDF / DOCX / DOC / MD / TXT"
             />
           </Card>
 

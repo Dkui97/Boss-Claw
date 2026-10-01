@@ -1501,11 +1501,11 @@ safeHandle('jc:qualified-jobs-dir-pick', async () => {
 // 口径：渲染层只持有文件绝对路径；正文每次调用 AI 前经 jc:material-read 现读并重新解析，
 // 因此用户在外部改了素材文件即时生效，应用内不保存任何素材内容副本。
 // 素材扩展名白名单（P4-10 双端共享口径：选择对话框 filters 与读取校验必须一致）
-const MATERIAL_EXT_WHITELIST = ['pdf', 'docx', 'md', 'markdown', 'txt', 'text'];
+const MATERIAL_EXT_WHITELIST = ['pdf', 'docx', 'doc', 'md', 'markdown', 'txt', 'text'];
 safeHandle('jc:material-pick', async () => {
   try {
     const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
-      title: '选择经历补充材料（PDF / DOCX / MD / TXT）',
+      title: '选择经历补充材料（PDF / DOCX / DOC / MD / TXT）',
       properties: ['openFile', 'multiSelections'],
       filters: [
         { name: '简历与文本', extensions: MATERIAL_EXT_WHITELIST },
@@ -1519,7 +1519,7 @@ safeHandle('jc:material-pick', async () => {
   }
 });
 
-// 按路径现读文件（不缓存）→ 返回 data URL，供渲染层复用既有解析链路（pdf 文本层 / docx / 纯文本）
+// 按路径现读文件（不缓存）→ 返回 data URL，供渲染层复用既有解析链路（pdf 文本层 / docx / doc / 纯文本）
 safeHandle('jc:material-read', async (_event, filePath) => {
   try {
     const p = String(filePath || '');
@@ -1531,7 +1531,7 @@ safeHandle('jc:material-read', async (_event, filePath) => {
     // P4-10：扩展名白名单与 jc:material-pick 的 filters 同源（拒绝任意绝对路径读取 → 防敏感文件外泄）
     const ext = path.extname(p).replace(/^\./, '').toLowerCase();
     if (!MATERIAL_EXT_WHITELIST.includes(ext)) {
-      return { ok: false, error: `不支持的素材格式：.${ext}（仅 PDF/DOCX/MD/TXT）` };
+      return { ok: false, error: `不支持的素材格式：.${ext}（仅 PDF/DOCX/DOC/MD/TXT）` };
     }
     const buf = await fs.promises.readFile(p);
     const mime = ext === 'pdf' ? 'application/pdf' : 'application/octet-stream';
