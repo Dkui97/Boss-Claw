@@ -621,6 +621,36 @@ export default function Stats() {
             </Card>
           </div>
 
+          {/* 投递漏斗（转化看板）：采集 → 投递 → 打开沟通 → 已回复 */}
+          <div className="stats-block">
+            <Card
+              size="small"
+              title="投递漏斗"
+              extra={
+                <Space size={12}>
+                  <Tag color="green" icon={<RiseOutlined />} style={{ borderRadius: 6 }}>
+                    回复率 {formatRate(snapshot.funnel.replyRate)}
+                  </Tag>
+                  <Tag color="cyan" icon={<RiseOutlined />} style={{ borderRadius: 6 }}>
+                    打开率 {formatRate(snapshot.funnel.openRate)}
+                  </Tag>
+                </Space>
+              }
+            >
+              <div className="status-hbar-list">
+                <HBar label="采集入队" hint="已入队（时间范围内）" value={snapshot.funnel.discovered} total={snapshot.funnel.discovered || 1} color="#3B82F6" />
+                <HBar label="已投递" hint={snapshot.funnel.sent > 0 ? `占采集 ${pct(snapshot.funnel.sent, snapshot.funnel.discovered)}%` : '尚未投递'} value={snapshot.funnel.sent} total={snapshot.funnel.discovered || 1} color="#10B981" />
+                <HBar label="已打开沟通" hint={snapshot.funnel.opened > 0 ? `占采集 ${pct(snapshot.funnel.opened, snapshot.funnel.discovered)}%` : '尚未打开沟通窗'} value={snapshot.funnel.opened} total={snapshot.funnel.discovered || 1} color="#A78BFA" />
+                <HBar label="已回复" hint={snapshot.funnel.replied > 0 ? `AI 回复成功，占采集 ${pct(snapshot.funnel.replied, snapshot.funnel.discovered)}%` : '暂无回复'} value={snapshot.funnel.replied} total={snapshot.funnel.discovered || 1} color="#F59E0B" />
+                <HBar label="面试" hint="暂无采集来源" value={snapshot.funnel.interviewCount} total={snapshot.funnel.discovered || 1} color="#CBD5E1" />
+              </div>
+              <p className="stats-note">
+                转化链路「采集入队 → 已投递 → 已打开沟通 → 已回复」；「已回复」按 AI 跟聊回复成功（replySentAt）计数、
+                仍属「已投递」（回复率不重复统计）；「面试」暂无采集来源，留 0 占位。
+              </p>
+            </Card>
+          </div>
+
           {/* 投递趋势（独占整行：30 日桶需要宽度） */}
           <div className="stats-block">
             <Card

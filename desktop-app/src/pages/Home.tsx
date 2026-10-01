@@ -46,6 +46,7 @@ import { MetricCard } from '@/components/MetricCard';
 import { electronApi } from '@/lib/electronApi';
 import { effectiveDailyCap, dailySentCount } from '@/lib/bossclaw/safety';
 import { PLATFORM_IDS, platformLabel, type JobPlatform } from '@/lib/bossclaw/platforms';
+import type { PendingItem } from '@/lib/bossclaw/types';
 import MarkdownView from '@/components/MarkdownView';
 
 const { Paragraph, Text } = Typography;
@@ -62,7 +63,7 @@ interface HomeStep {
 
 const STEPS: HomeStep[] = [
   { key: 'settings', tab: 'llm', icon: <ApiOutlined />, label: '配置 AI 模型', desc: 'API Key / 模型名' },
-  { key: 'resume', icon: <FileTextOutlined />, label: '导入简历', desc: 'PDF / DOCX / MD / TXT' },
+  { key: 'resume', icon: <FileTextOutlined />, label: '导入简历', desc: 'PDF / DOCX / DOC / MD / TXT' },
   { key: 'resume', icon: <ProfileOutlined />, label: '生成职业画像', desc: 'AI 生成，可编辑' },
   { key: 'directions', icon: <AimOutlined />, label: '选择投递方向', desc: '勾选并确认' },
   { key: 'workbench', icon: <ThunderboltOutlined />, label: '工作台投递', desc: '浏览器 + 人工确认/全自动' },
@@ -82,6 +83,49 @@ const QUICK_ENTRIES = [
   { key: 'autochat', icon: <MessageOutlined />, title: '自动沟通', desc: '批量自动投递 / 智能打招呼' },
   { key: 'settings', icon: <SettingOutlined />, title: '设置', desc: '主题 / LLM / 数据管理' },
 ];
+
+/** 第 5 步「工作台投递」的进度事实：唯一判定入口。
+ *
+ * 语义 = **至少成功投出第一份**（`sent`），而不是「队列里有动作」。
+ * 历史 bug：原判定为 `status === 'approved_queue' || status === 'sent'`，把「投递中」也算完成，
+ * 且完全不认 `failed`，于是「批准后没启动」（停在 approved）与「投递失败」（变 failed）两种
+ * 现实路径都会让进度永久停在 80%，而界面不给任何解释。
+ * 这里把事实与「下一步该做什么」一起算出来，供进度、步骤条、诊断行三处共用（单一真相）。
+ *
+ * `engineRunning` 必须由调用方传入（即订阅的 `autoAssist`）：曾在函数内读 store 快照，
+ * 结果引擎启停而 `pending` 未变时诊断文案不刷新，提示与实际状态脱节。 */
+function evalDeliveryStep(pending: PendingItem[], engineRunning: boolean) {
+  const count = (st: PendingItem['status']) => pending.filter((p) => p.status === st).length;
+  const counts = {
+    approved: count('approved'),
+    approvedQueue: count('approved_queue'),
+    sent: count('sent'),
+    failed: count('failed'),
+    pending: count('pending'),
+  };
+  // 已成功投递过（含历史：只要存在 sent 条目即算走完，不因后续条目失败而回退）
+  const delivered = counts.sent > 0;
+
+  /** 未完成时的归因提示（区分「该做什么」与「为什么没成」），已完成时返回 null */
+  let diagnosis: string | null = null;
+  if (!delivered) {
+    if (counts.failed > 0) {
+      // 失败优先于「待处理」：失败是用户最需要知道、也最容易忽略的终态
+      diagnosis = `有 ${counts.failed} 个岗位投递失败，未成功投出：到工作台看错误详情后重试`;
+    } else if (counts.approvedQueue > 0) {
+      diagnosis = engineRunning
+        ? `有 ${counts.approvedQueue} 个岗位投递中，未成功投出：打开工作台查看实时进度`
+        : `有 ${counts.approvedQueue} 个岗位在队列中，但投递引擎已停止：点上方「开始投递」继续`;
+    } else if (counts.approved > 0) {
+      diagnosis = `有 ${counts.approved} 个岗位已确认但未启动：回工作台点「开始投递」`;
+    } else if (counts.pending > 0) {
+      diagnosis = `有 ${counts.pending} 个岗位待确认：到工作台确认后才会进入投递队列`;
+    } else {
+      diagnosis = '还没有岗位：先到工作台采集，再把岗位加入任务';
+    }
+  }
+  return { delivered, counts, diagnosis };
+}
 
 export default function Home() {
   const profile = useDataStore((s) => s.profile);
@@ -129,19 +173,23 @@ export default function Home() {
     }
   };
 
+  // 第 5 步（投递）的事实 + 归因：进度条、步骤条、诊断行三处共用同一个结果（单一真相）。
+  // 依赖 autoAssist：引擎启停会改变「队列中但已停止」这类归因文案，必须触发重算。
+  const delivery = evalDeliveryStep(pending, autoAssist);
+
   useEffect(() => {
     // 配置进度 = 五个必做步骤各 20%。
     // 第 1 步「配置 AI 模型」是业务必需前置（岗位评分 / 打招呼语 / 职业画像 / 定制简历都以 AI 为准），
     // 此前只作为「运行状态」里的一格展示，用户看不到它对整体进度的影响。
+    // 第 5 步的判定与归因统一走 evalDeliveryStep（单一真相），避免进度与步骤条各写一套条件而失配。
     let p = 0;
     if (llmReady) p += 20;
     if (resumeText) p += 20;
     if (profileHasCore(profile)) p += 20;
     if (directionPlan?.confirmed) p += 20;
-    if (pending.some((x) => x.status === 'approved_queue' || x.status === 'sent')) p += 20;
+    if (delivery.delivered) p += 20;
     setProgress(p);
-  }, [profile, resumeText, directionPlan, pending, llmReady]);
-
+  }, [profile, resumeText, directionPlan, pending, llmReady, delivery.delivered]);
   const selectedCount = selectedDirectionItems(directionPlan).length;
 
   const statusCells = [
@@ -157,7 +205,7 @@ export default function Home() {
     resumeText ? 'done' : 'todo',
     profileHasCore(profile) ? 'done' : 'todo',
     directionPlan?.confirmed ? 'done' : 'todo',
-    pending.some((x) => x.status === 'approved_queue' || x.status === 'sent') ? 'done' : 'todo',
+    delivery.delivered ? 'done' : 'todo',
   ];
   const currentStep = stepStates.findIndex((s) => s !== 'done');
 
@@ -454,6 +502,12 @@ export default function Home() {
         <div className="short-grid cols-5" style={{ marginTop: 14 }}>
           {STEPS.map((s, i) => {
             const st = currentStep === -1 || i < currentStep ? 'done' : i === currentStep ? 'current' : 'todo';
+            const isDeliveryStep = i === STEPS.length - 1;
+            // 第 5 步的 desc 换成本次实际卡在哪的可定位说明（方案 C）：
+            // 原来固定写「浏览器 + 人工确认/全自动」，进度停在 80% 时用户无从得知原因。
+            const desc = isDeliveryStep && !delivery.delivered && delivery.diagnosis
+              ? delivery.diagnosis
+              : s.desc;
             // 带 tab 的步骤（配置 AI 模型）直达设置页对应分区；其余按 key 切页
             const go = () => (s.tab ? openSettings(s.tab as SettingsTabKey) : setRoute(s.key as any));
             return (
@@ -475,12 +529,23 @@ export default function Home() {
                 </span>
                 <div className="step-content">
                   <div className="step-label">{s.label}</div>
-                  <div className="step-desc">{s.desc}</div>
+                  <div className={isDeliveryStep && !delivery.delivered && delivery.diagnosis ? 'step-desc step-desc-diagnosis' : 'step-desc'}>
+                    {desc}
+                  </div>
                 </div>
               </div>
             );
           })}
         </div>
+        {/* 归因行：进度未满 100% 时，明确告知「差在哪一步、下一步做什么」——
+            步骤条本身只表达 done/todo，无法承载原因，用户此前只能看到进度停在 80% 而不知为何。 */}
+        {progress < 100 && (
+          <div className="config-progress-hint">
+            {delivery.diagnosis && !delivery.delivered && stepStates[STEPS.length - 1] !== 'done'
+              ? `还差「工作台投递」这一步：${delivery.diagnosis}`
+              : '还有步骤未完成：点上面对应卡片可直接前往'}
+          </div>
+        )}
       </div>
 
       {/* 快速入口 (5 个入口独占整行 5 列网格) */}

@@ -2297,6 +2297,24 @@ html[data-theme='dark'] .direction-tag {
 .step-content { flex: 1; min-width: 0; }
 .step-label { font-size: 13px; font-weight: 600; color: var(--fg); }
 .step-desc { font-size: 11px; color: var(--fg-muted); margin-top: 2px; }
+/* 第 5 步的归因文案（比常规 desc 长，且是「该做什么」的行动指令，需要可换行 + 提高可读性） */
+.step-desc-diagnosis {
+  color: var(--status-warning);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+/* 配置进度的归因行：进度未满时说明「差在哪一步」，避免用户看到进度停住却不知原因 */
+.config-progress-hint {
+  margin-top: 12px;
+  padding: 8px 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fg-muted);
+  background: var(--hover-bg);
+  border-left: 3px solid var(--brand);
+  border-radius: 6px;
+  text-wrap: initial;
+}
 
 /* ===== 核心组件：Timeline (最近动态) ===== */
 .timeline-item {
@@ -2470,8 +2488,8 @@ html[data-theme='dark'] .direction-tag {
   min-width: 0;
 }
 .log-console__head-row + .log-console__head-row { padding-top: 2px; }
-.log-console__title { color: #E2E8F0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.log-console__count { font-size: 11px; color: #94A3B8; flex-shrink: 0; white-space: nowrap; }
+.log-console__title { color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.log-console__count { font-size: 11px; color: var(--fg-muted); flex-shrink: 0; white-space: nowrap; }
 .log-console__actions {
   display: inline-flex;
   align-items: center;
@@ -2486,7 +2504,7 @@ html[data-theme='dark'] .direction-tag {
   gap: 4px;
   min-height: 140px;
 }
-.log-console__empty { color: #64748B; font-size: 12px; padding: 12px 0; text-align: center; }
+.log-console__empty { color: var(--fg-muted); font-size: 12px; padding: 12px 0; text-align: center; }
 
 .log-item {
   display: flex;
@@ -2498,14 +2516,14 @@ html[data-theme='dark'] .direction-tag {
   border-radius: 4px;
   word-break: break-all;
 }
-.log-item__time { color: #64748B; font-size: 11px; flex: 0 0 auto; }
+.log-item__time { color: var(--fg-subtle); font-size: 11px; flex: 0 0 auto; }
 .log-item__tag { font-size: 11px; font-weight: 600; flex: 0 0 auto; }
-.log-item__msg { flex: 1 1 auto; min-width: 0; white-space: pre-wrap; word-break: break-all; font-size: 12px; color: #E2E8F0; line-height: 1.5; }
-.log-item__tag--info { color: #38BDF8; }
-.log-item__tag--success { color: #10B981; }
-.log-item__tag--warn { color: #F59E0B; }
-.log-item__tag--error { color: #EF4444; font-weight: 700; }
-.log-item--error { background: rgba(239, 68, 68, 0.15); border-left: 3px solid #EF4444; }
+.log-item__msg { flex: 1 1 auto; min-width: 0; white-space: pre-wrap; word-break: break-all; font-size: 12px; color: var(--fg); line-height: 1.5; }
+.log-item__tag--info { color: var(--brand); }
+.log-item__tag--success { color: var(--status-success); }
+.log-item__tag--warn { color: var(--status-warning); }
+.log-item__tag--error { color: var(--status-danger); font-weight: 700; }
+.log-item--error { background: rgba(239, 68, 68, 0.1); border-left: 3px solid var(--status-danger); }
 
 .log-console__scroll-btn {
   position: absolute;
