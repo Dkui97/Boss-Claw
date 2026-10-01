@@ -402,8 +402,13 @@ function BrowserViewImpl({ defaultPlatform = 'boss', onNavigate, onJoinTask, onJ
 
 
   // ===== 注册 webview 元素 + 绑定事件监听 =====
-  // 关键修复：handleRegister 内部不直接使用 useCallback 的回调函数，
-  // 而是读取 callbacksRef.current，保证始终调用最新版本的 onNavigate 等。
+  // 关键：事件回调一律**在触发时**读 `callbacksRef.current`，绝不在此处一次性捕获成常量。
+  // 铁律（2026-10-01 修复）：`ref={tabRef(t.id)}` 改成「身份稳定 ref 回调」后（见下方 tabRef 注释），
+  // handleRegister 对每个标签**一辈子只跑一次**，此时把 `callbacksRef.current` 存进 `const cb` 就等于
+  // 把「注册那一刻的 onApplyStage 闭包」永久冻结：其闭包里的 Workbench `activeId` 会一直停在旧值
+  // （首个岗位常为 null）→ `handleApplyStage` 开头的 `if (!activeId || !active) return` 把**整个岗位
+  // 的 apply-stage 全部静默丢弃**→ 页面照常把招呼语发出去，工作台却只能干等 55s 兜底超时报
+  // 「DOM 沟通投递超时（55s）」并把岗位标成失败（=「能正常投递，但不能变成已投递」）。
   const handleRegister = useCallback((tabId: string, el: any) => {
     if (!el) {
       // P20：元素卸载/null 时同步清理注册态，避免同 tabId 重建时「新元素不绑监听 + 旧元素残留」致 IPC 静默失效
@@ -415,8 +420,6 @@ function BrowserViewImpl({ defaultPlatform = 'boss', onNavigate, onJoinTask, onJ
     webviewEls.current[tabId] = el;
     if (registeredTabs.current[tabId]) return;
     registeredTabs.current[tabId] = true;
-
-    const cb = callbacksRef.current;
 
     // ===== preload 属性防御性修复 =====
     // 症状：preload 属性为空/协议非 file: → webview 所有 IPC（采集/Dump DOM）静默失效。
@@ -451,19 +454,19 @@ function BrowserViewImpl({ defaultPlatform = 'boss', onNavigate, onJoinTask, onJ
           break;
         }
         case 'login-state':
-          cb.onLoginState?.(payload);
+          callbacksRef.current.onLoginState?.(payload);
           break;
         case 'job-extracted':
-          cb.onJobExtracted?.(payload);
+          callbacksRef.current.onJobExtracted?.(payload);
           break;
         case 'apply-stage':
-          cb.onApplyStage?.(payload?.stage, payload, tabId);
+          callbacksRef.current.onApplyStage?.(payload?.stage, payload, tabId);
           break;
         case 'collect-progress':
-          cb.onCollectProgress?.(payload);
+          callbacksRef.current.onCollectProgress?.(payload);
           break;
         case 'collect-done':
-          cb.onCollectDone?.(payload);
+          callbacksRef.current.onCollectDone?.(payload);
           break;
         case 'preload-ready':
           // preload 顶层脚本执行完毕 = IPC 监听器已注册（最权威的就绪信号）。
@@ -471,7 +474,7 @@ function BrowserViewImpl({ defaultPlatform = 'boss', onNavigate, onJoinTask, onJ
           preloadReady.current[tabId] = true;
           break;
         case 'dom-dump':
-          cb.onDomDump?.(payload);
+          callbacksRef.current.onDomDump?.(payload);
           break;
         case 'boss-api-result': {
           const resolve = apiResolvers.current.get(String(payload?.seq));
@@ -511,7 +514,7 @@ function BrowserViewImpl({ defaultPlatform = 'boss', onNavigate, onJoinTask, onJ
     // ===== preload 加载失败诊断（webview 原生事件）=====
     // preload 脚本路径错误 / 语法错误 / sandbox 限制时触发，给出 Chromium 错误码
     el.addEventListener('preload-error', (event: any) => {
-      cb.onDomDump?.({
+      callbacksRef.current.onDomDump?.({
         type: 'preload-error',
         error: String(event?.error || ''),
         errorCode: Number(event?.errorCode ?? -1),
@@ -627,6 +630,14 @@ function BrowserViewImpl({ defaultPlatform = 'boss', onNavigate, onJoinTask, onJ
   //   宿主轮询 25s 后误判「详情页加载超时」（页面其实 2s 内就已可用）；
   //   ② 每次重渲染重绑一整套 webview 事件监听 → 监听器持续累积。
   // 修复：Map 缓存「同一 tabId 恒返回同一个函数引用」，React 便不再做 detach/attach。
+  // ⚠️ 与本修复**强绑定**的铁律（2026-10-01 踩过，非 BOSS 链路改动引入、却让 BOSS 工作台投递全废）：
+  //   ref 一旦「身份稳定」，handleRegister 对每个标签就只跑一次，**任何在 handleRegister 内部
+  //   把 `callbacksRef.current` 存成常量（`const cb = ...`）的写法都会把回调永久冻结**。
+  //   被冻结的 onApplyStage 闭包里的 Workbench `activeId` 会停在旧值（首个岗位常为 null），
+  //   于是 apply-stage 被 `if (!activeId || !active) return` 全量丢弃 —— 页面照常发出招呼语，
+  //   工作台只能干等 55s 兜底超时并判失败（「能正常投递，但不能变成已投递」）。
+  //   故：① 事件回调必须**在触发时**读 `callbacksRef.current`；
+  //       ② 再改「非 BOSS 就绪判定 / webview ref / 标签生命周期」时，务必回头确认 BOSS 工作台投递未被波及。
   const tabRefCallbacks = useRef<Map<string, (el: any) => void>>(new Map());
   const handleRegisterRef = useRef(handleRegister);
   handleRegisterRef.current = handleRegister;
@@ -1216,6 +1227,9 @@ function BrowserViewImpl({ defaultPlatform = 'boss', onNavigate, onJoinTask, onJ
           return (
             <div key={t.id} className={'browser-pane' + (t.id === activeId ? ' is-active' : '')}>
               {/* ⚠️ 核心红线约束：<webview> 元素必须保持 display: flex 容器级联，严禁行内或 CSS 设置 display: block */}
+              {/* ⚠️ ref 必须是「身份稳定」的 tabRef(t.id)，**禁止改回行内箭头** `ref={(el) => handleRegister(t.id, el)}`：
+                  行内箭头每次渲染都是新引用 → 反复 detach/attach → 每次重渲染抹掉 preloadReady → 非 BOSS 一键投递恒报「详情页加载超时」。
+                  配套铁律：handleRegister 内部**禁止**把 `callbacksRef.current` 一次性存成常量（那会把 BOSS 工作台投递的 apply-stage 全量冻死，见 handleRegister / tabRef 两处注释）。 */}
               <webview
                 ref={tabRef(t.id)}
                 preload={WEBVIEW_PRELOAD}
