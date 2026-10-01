@@ -204,6 +204,35 @@ def search_jobs(query: str, city: str, pages: int = 1, os_name: str | None = Non
     return {"ok": True, "code": 0, "jobs": formatted}
 
 
+def _fmt_publish_time(raw) -> str:
+    """把 BOSS 的发布时间字段归一成前端 priority.ts::freshnessPriority 能判级的文本。
+
+    只做格式归一，不做业务猜测；无法解析一律返回 ''（与「未识别」同义，不参与排序加权）。
+    兼容 BOSS joblist 的 lastModifyTime（毫秒时间戳）/ lastModifyTimeStr（文本）/ publishTime。
+    """
+    s = str(raw or '').strip()
+    if not s:
+        return ''
+    # 已是文本形态（如「3日内更新」「今天」）→ 原样返回，交给前端正则判级
+    if not s.isdigit():
+        return s[:40]
+    try:
+        ms = int(s)
+        # 秒级时间戳兼容（10 位视为秒，13 位视为毫秒）
+        ts = ms / 1000.0 if ms > 10 ** 11 else float(ms)
+        delta = datetime.now() - datetime.fromtimestamp(ts)
+        days = delta.days
+        if days < 0:
+            return ''
+        if days == 0:
+            return '今日更新'
+        if days == 1:
+            return '1天前更新'
+        return f'{days}天前更新'
+    except Exception:
+        return ''
+
+
 def format_jobs(raw_jobs: list) -> list:
     """BOSS 原始岗位字段 → Boss-claw JobMeta 兼容结构。"""
     output = []
@@ -223,6 +252,10 @@ def format_jobs(raw_jobs: list) -> list:
             "skills": j.get('skills', []),
             # 福利/工作制度标签（如「周末双休」）：日薪折算月薪的工作日基数识别来源
             "welfare": j.get('welfareList', []),
+            # 岗位发布时间（僵尸岗位过滤 + 新鲜度排序的唯一数据源）。
+            # 此前该字段从未透传 → TS 侧 publishTime 恒为空，priority.ts 的 freshnessPriority
+            # 永远返回 0，新鲜度维度实际失效。这里统一转成前端能判级的文本。
+            "publishTime": _fmt_publish_time(j.get('lastModifyTime') or j.get('lastModifyTimeStr') or j.get('publishTime')),
             "description": j.get('jobDesc', ''),
             "recruiterName": j.get('bossName', ''),
             "bossTitle": j.get('bossTitle', ''),
@@ -1276,9 +1309,13 @@ def chat_greeting(job_id: str, greeting: str, os_name: str | None = None,
 
         # Step 4-5: 健壮进入沟通页面（点击按钮/重点「继续沟通」/ app.zhipin 交接 / 弹窗确认），取回聊天输入框
         target_page, input_el = _enter_chat(page)
-        if input_el is None:
+        # 修复：_enter_chat 失败时返回 (None, error_dict)，input_el 是 dict 而非 None。
+        # 旧代码只判 input_el is None，漏检后把 dict 当元素句柄 .click()，崩出
+        # "'dict' object has no attribute 'click'"。此处必须按 target_page 判失败，
+        # 并对 dict 做双保险，同时把错误码（35 风控 / 600 外部网申 / 404 无按钮）透传出去。
+        if target_page is None or input_el is None or isinstance(input_el, dict):
             save_cookies(page.context)
-            err = target_page or {}
+            err = input_el if isinstance(input_el, dict) else {}
             return {"ok": False, "code": err.get('code', 500), "sent": False,
                     "message": err.get('message', '沟通窗口未打开'),
                     "external": bool(err.get('external'))}

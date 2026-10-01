@@ -655,6 +655,33 @@ function scanPositiveKeywords(...texts) {
   return POSITIVE_KEYWORDS.filter(([, re]) => re.test(t)).map(([label]) => label);
 }
 
+// 岗位发布时间/更新时间归一（僵尸岗位过滤 + 新鲜度排序的唯一数据源，见 priority.ts::freshnessPriority）。
+// 优先结构元素文本（job-update / update-time / job-time），其次卡片/详情文本的关键词形态。
+// 返回 priority.ts 可判级的文本（「今日更新」「N天前更新」「本周更新」等），未命中返回 ''。
+function extractPublishTime(cardText, detailText) {
+  const t = textOf($('[class*="job-update"],[class*="update-time"],[class*="publish"],[class*="job-time"]'))
+    || String(cardText || '').match(/刚刚(?:更新|发布)|今日(?:更新|发布)|今天(?:更新|发布)|(?:昨天|昨日)(?:更新|发布)|\d+\s*(?:分钟|小时)前(?:更新|发布)|\d+\s*天前(?:更新|发布)|\d+\s*日内更新|本周更新|本月更新/)?.[0]
+    || String(detailText || '').match(/发布于\s*[\d-]+|(?:更新|发布)于\s*\d+\s*(?:分钟|小时|天)前|(?:更新|发布)于\s*[\d]{1,2}[-/月]\d{1,2}/)?.[0]
+    || '';
+  return String(t || '').trim().slice(0, 40);
+}
+
+// 时间戳 → 可判级文本（对齐 Python 侧 camoufox_server.py::_fmt_publish_time）：
+// card.json / joblist API 的 lastModifyTime 毫秒时间戳归一为「今日更新 / N天前更新」。
+function formatPublishTime(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return '';
+  if (!/^\d+$/.test(s)) return s.slice(0, 40);
+  const ms = Number(s);
+  const ts = ms > 1e11 ? ms : ms * 1000; // 秒级 / 毫秒级兼容
+  const delta = Date.now() - ts;
+  if (!Number.isFinite(ts) || delta < 0) return '';
+  const days = Math.floor(delta / 86400000);
+  if (days <= 0) return '今日更新';
+  if (days === 1) return '1天前更新';
+  return `${days}天前更新`;
+}
+
 function extractWelfareTags(root) {
   const scope = root || document;
   // 详情页标签区：保留「有用福利」与工作制度短标签
@@ -696,7 +723,7 @@ function extractJobFromDom() {
     || '';
   const description = cleanJobDescription(scopeText).slice(0, 1500);
   // 内嵌 _jobInfo 为权威：覆盖 title/company/salary，meta「地点：」覆盖 location，保证与网页一致
-  const job = applyEmbeddedOverlay({ url: location.href, title, company, salary, location, description, welfare: extractWelfareTags(banner || document) });
+  const job = applyEmbeddedOverlay({ url: location.href, title, company, salary, location, description, welfare: extractWelfareTags(banner || document), publishTime: extractPublishTime('', scopeText) });
   // 诊断证据：关键字段全缺时带回「页面里到底有没有数据」，用于区分空壳页（未登录/被拦截）还是选择器不匹配
   if (!job.company && !job.salary && !job.location) {
     job.parseDiag = 'dom|' +
@@ -753,6 +780,8 @@ async function extractJob() {
         ],
         scaleName: method(d.scaleName),
         typeName: method(d.typeName),
+        // 岗位发布时间：card.json 的 lastModifyTime（毫秒时间戳）/ lastModifyTimeStr 归一
+        publishTime: formatPublishTime(d.lastModifyTime || d.lastModifyTimeStr || d.updateTime),
       });
       // API 数据残缺（连公司/薪资/地点都没有，常见于缺 securityId 或接口返回空壳）时不直接用，
       // 回退到 DOM 兜底：全文正则可补；仍缺则带回 parseDiag 供定位「空壳页 vs 选择器不匹配」。
@@ -1847,6 +1876,11 @@ function extractJobDetail(card) {
     || textOf($('.boss-online-tag') || $('.boss-active-time') || $('[class*="boss-active"]'))
     || detailText.match(/在线|刚刚活跃|今日活跃|\d+\s*日内活跃/)?.[0]
     || '';
+  // 岗位发布时间/更新时间（僵尸岗位过滤 + 新鲜度排序的唯一数据源，与「加入任务」链路同函数）
+  // 采集侧此前**从未提取**该字段（publishTime 恒为空）→ priority.ts 的 freshnessPriority
+  // 永远返回 0，新鲜度维度实际失效。形态：卡片/详情面板的「刚刚更新」「今日更新」
+  // 「N天前更新」「本周更新」「更新于 08-10」等，取首个命中。
+  const publishTime = extractPublishTime(cardText, detailText);
   // 招聘方姓名（job-claw-main detailRecruiterIdentity 口径）
   const recruiterName = textOf(root?.querySelector('[class*="boss-name"],[class*="bossName"],[class*="recruiter-name"],[class*="job-boss"] [class*="name"],[class*="boss-info"] [class*="name"]'))
     || '';
@@ -1871,6 +1905,7 @@ function extractJobDetail(card) {
     jobId,
     chatUrl,
     hrActive,
+    publishTime,
     isHeadhunter: fields.isHeadhunter,
     recruiterName,
     recruiterTitle: fields.recruiterTitle,

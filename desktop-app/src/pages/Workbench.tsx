@@ -1708,7 +1708,7 @@ export default function Workbench() {
     labels: Array.isArray(j.labels) ? j.labels : [],
     welfare: Array.isArray(j.welfare) ? j.welfare : [],
     recruiterName: j.recruiterName || '',
-    publishTime: '',
+    publishTime: j.publishTime || '',
   });
 
   /** 按指定平台执行一次采集（等待完成），返回本平台对整批队列的续行信号。

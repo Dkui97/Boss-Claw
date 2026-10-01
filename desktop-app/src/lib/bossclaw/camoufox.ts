@@ -52,6 +52,8 @@ export interface CamoufoxJob {
   skills: string[];
   /** 福利/工作制度标签（如「周末双休」）：日薪折算月薪的工作日基数识别来源 */
   welfare?: string[];
+  /** 岗位发布时间（“今日更新 / N天前更新”等，BOSS 采集新鲜度排序与僵尸岗位过滤的数据源） */
+  publishTime?: string;
   description: string;
   recruiterName: string;
   bossTitle: string;
